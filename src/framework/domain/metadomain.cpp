@@ -276,6 +276,14 @@ namespace ntt {
           if (prtl_bc == PrtlBC::PERIODIC) {
             prtl_bc = PrtlBC::SYNC;
           }
+          // GLIDE (reflection-periodic) applies a theta-component sign flip that
+          // is not implemented across domain boundaries, so it requires the
+          // whole direction to live on a single domain.
+          raise::ErrorIf(
+            flds_bc == FldsBC::GLIDE or prtl_bc == PrtlBC::GLIDE,
+            "GLIDE boundary requires a single domain in that direction "
+            "(decompose the other dimension only)",
+            HERE);
         }
         current_domain.mesh.set_flds_bc(direction, flds_bc);
         current_domain.mesh.set_prtl_bc(direction, prtl_bc);

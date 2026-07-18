@@ -177,11 +177,13 @@ namespace ntt {
           }
         }
       } else {
-        raise::ErrorIf(flds_bc.size() > 1, "invalid `grid.boundaries.fields`", HERE);
-        raise::ErrorIf(prtl_bc.size() > 1,
-                       "invalid `grid.boundaries.particles`",
-                       HERE);
         if (engine_enum == SimEngine::SRPIC) {
+          raise::ErrorIf(flds_bc.size() > 1,
+                         "invalid `grid.boundaries.fields`",
+                         HERE);
+          raise::ErrorIf(prtl_bc.size() > 1,
+                         "invalid `grid.boundaries.particles`",
+                         HERE);
           raise::ErrorIf(flds_bc[0].size() != 2,
                          "invalid `grid.boundaries.fields`",
                          HERE);
@@ -203,22 +205,65 @@ namespace ntt {
             prtl_bc_enum.push_back({ PrtlBC::PERIODIC, PrtlBC::PERIODIC });
           }
         } else {
+          // GRPIC (spherical/Kerr-Schild): inner x1 is always HORIZON and the
+          // user provides the outer-x1 BC as `fields = [["<outer>"]]`.  The x2
+          // (theta) boundary defaults to AXIS; a second entry `["periodic"]`
+          // requests a periodic theta-slab instead (poles must be excluded from
+          // the domain, i.e. x2_min > 0 and x2_max < pi).
+          raise::ErrorIf(flds_bc.empty() || flds_bc.size() > 2,
+                         "invalid `grid.boundaries.fields`",
+                         HERE);
+          raise::ErrorIf(prtl_bc.empty() || prtl_bc.size() > 2,
+                         "invalid `grid.boundaries.particles`",
+                         HERE);
           raise::ErrorIf(flds_bc[0].size() != 1,
                          "invalid `grid.boundaries.fields`",
                          HERE);
           raise::ErrorIf(prtl_bc[0].size() != 1,
                          "invalid `grid.boundaries.particles`",
                          HERE);
+          // x1
           flds_bc_enum.push_back(
             { FldsBC::HORIZON, FldsBC::pick(fmt::toLower(flds_bc[0][0]).c_str()) });
-          flds_bc_enum.push_back({ FldsBC::AXIS, FldsBC::AXIS });
-          if (dim == Dim::_3D) {
-            flds_bc_enum.push_back({ FldsBC::PERIODIC, FldsBC::PERIODIC });
-          }
           prtl_bc_enum.push_back(
             { PrtlBC::HORIZON, PrtlBC::pick(fmt::toLower(prtl_bc[0][0]).c_str()) });
-          prtl_bc_enum.push_back({ PrtlBC::AXIS, PrtlBC::AXIS });
+          // x2 (theta): fields and particles are set INDEPENDENTLY from an
+          // optional second entry, each `axis` (default) or `periodic`.  This
+          // allows mixed boundaries, e.g. mirror/symmetry (`axis`) fields with
+          // periodic ("travel-through") particles.  For `periodic` the poles
+          // must be excluded (x2_min > 0, x2_max < pi); if particles are
+          // `periodic` but fields are not, keep theta on a single domain
+          // (decompose r only) so the particle wrap needs no communication.
+          FldsBC x2_flds { FldsBC::AXIS };
+          if (flds_bc.size() == 2) {
+            raise::ErrorIf(flds_bc[1].empty(),
+                           "invalid `grid.boundaries.fields` (x2)",
+                           HERE);
+            x2_flds = FldsBC::pick(fmt::toLower(flds_bc[1][0]).c_str());
+            raise::ErrorIf(x2_flds != FldsBC::AXIS and
+                             x2_flds != FldsBC::PERIODIC and
+                             x2_flds != FldsBC::GLIDE,
+                           "GRPIC x2 field boundary must be `axis`, `periodic`, "
+                           "or `glide`",
+                           HERE);
+          }
+          flds_bc_enum.push_back({ x2_flds, x2_flds });
+          PrtlBC x2_prtl { PrtlBC::AXIS };
+          if (prtl_bc.size() == 2) {
+            raise::ErrorIf(prtl_bc[1].empty(),
+                           "invalid `grid.boundaries.particles` (x2)",
+                           HERE);
+            x2_prtl = PrtlBC::pick(fmt::toLower(prtl_bc[1][0]).c_str());
+            raise::ErrorIf(x2_prtl != PrtlBC::AXIS and
+                             x2_prtl != PrtlBC::PERIODIC and
+                             x2_prtl != PrtlBC::GLIDE,
+                           "GRPIC x2 particle boundary must be `axis`, `periodic`, "
+                           "or `glide`",
+                           HERE);
+          }
+          prtl_bc_enum.push_back({ x2_prtl, x2_prtl });
           if (dim == Dim::_3D) {
+            flds_bc_enum.push_back({ FldsBC::PERIODIC, FldsBC::PERIODIC });
             prtl_bc_enum.push_back({ PrtlBC::PERIODIC, PrtlBC::PERIODIC });
           }
         }
@@ -478,11 +523,23 @@ namespace ntt {
       }
       raise::ErrorIf(extent->at(0).size() != 2, "invalid `grid.extent[0]`", HERE);
       if (coord_enum != Coord::Cartesian) {
-        raise::ErrorIf(extent->size() > 1,
+        // grid.extent[0] = [r_min, r_max] is required.  grid.extent[1] =
+        // [theta_min, theta_max] is optional and defaults to the full [0, pi]
+        // (axis at both ends); provide it to carve out a theta-band, e.g. a
+        // periodic slab symmetric about pi/2.  grid.extent[2] = [phi_min,
+        // phi_max] (3D only) defaults to [0, 2pi].
+        const auto max_ext = (dim.value() == Dim::_3D) ? 3u : 2u;
+        raise::ErrorIf(extent->size() > max_ext,
                        "invalid `grid.extent` for non-cartesian geometry",
                        HERE);
-        extent->push_back({ ZERO, constant::PI });
-        if (dim.value() == Dim::_3D) {
+        if (extent->size() < 2) {
+          extent->push_back({ ZERO, constant::PI });
+        } else {
+          raise::ErrorIf(extent->at(1).size() != 2,
+                         "invalid `grid.extent[1]` (theta)",
+                         HERE);
+        }
+        if (dim.value() == Dim::_3D && extent->size() < 3) {
           extent->push_back({ ZERO, TWO * constant::PI });
         }
       }

@@ -35,13 +35,31 @@ namespace ntt {
   template <SimEngine::type S, MetricClass M>
   auto GetSendRecvRanks(const Metadomain<S, M>* const   metadomain,
                         Domain<S, M>&                   domain,
-                        const dir::direction_t<M::Dim>& direction)
+                        const dir::direction_t<M::Dim>& direction,
+                        bool                            use_prtl_bc = false)
     -> std::pair<address_t, address_t> {
     const Domain<S, M>* send_to_nghbr_ptr   = nullptr;
     const Domain<S, M>* recv_from_nghbr_ptr = nullptr;
+    // Classify a boundary as periodic / sync from either the field or the
+    // particle BC.  Currents and particles follow the *particle* BC, which may
+    // differ from the field BC (e.g. mirror/axis fields with periodic
+    // "travel-through" particles: the field is reflected, but the current the
+    // particles deposit must still be folded periodically to stay conserved).
+    // GLIDE (reflection-periodic) wraps like PERIODIC; the theta-component sign
+    // flip is applied separately (fields: GlideFieldsIn; particles: pusher).
+    const auto is_periodic = [&](const dir::direction_t<M::Dim>& d) -> bool {
+      return use_prtl_bc ? (domain.mesh.prtl_bc_in(d) == PrtlBC::PERIODIC or
+                            domain.mesh.prtl_bc_in(d) == PrtlBC::GLIDE)
+                         : (domain.mesh.flds_bc_in(d) == FldsBC::PERIODIC or
+                            domain.mesh.flds_bc_in(d) == FldsBC::GLIDE);
+    };
+    const auto is_sync = [&](const dir::direction_t<M::Dim>& d) -> bool {
+      return use_prtl_bc ? (domain.mesh.prtl_bc_in(d) == PrtlBC::SYNC)
+                         : (domain.mesh.flds_bc_in(d) == FldsBC::SYNC);
+    };
     // set pointers to the correct send/recv domains
     // can coincide with the current domain if periodic
-    if (domain.mesh.flds_bc_in(direction) == FldsBC::PERIODIC) {
+    if (is_periodic(direction)) {
       // sending / receiving from itself
       raise::ErrorIf(
         domain.neighbor_idx_in(direction) != domain.index(),
@@ -53,12 +71,12 @@ namespace ntt {
           domain.index()),
         HERE);
       raise::ErrorIf(
-        domain.mesh.flds_bc_in(-direction) != FldsBC::PERIODIC,
+        not is_periodic(-direction),
         "Periodic boundary conditions must be set in both directions",
         HERE);
       send_to_nghbr_ptr   = &domain;
       recv_from_nghbr_ptr = &domain;
-    } else if (domain.mesh.flds_bc_in(direction) == FldsBC::SYNC) {
+    } else if (is_sync(direction)) {
       // sending to other domain
       raise::ErrorIf(
         domain.neighbor_idx_in(direction) == domain.index(),
@@ -66,7 +84,7 @@ namespace ntt {
         HERE);
       send_to_nghbr_ptr = metadomain->subdomain_ptr(
         domain.neighbor_idx_in(direction));
-      if (domain.mesh.flds_bc_in(-direction) == FldsBC::SYNC) {
+      if (is_sync(-direction)) {
         // receiving from other domain
         raise::ErrorIf(
           domain.neighbor_idx_in(-direction) == domain.index(),
@@ -75,7 +93,7 @@ namespace ntt {
         recv_from_nghbr_ptr = metadomain->subdomain_ptr(
           domain.neighbor_idx_in(-direction));
       }
-    } else if (domain.mesh.flds_bc_in(-direction) == FldsBC::SYNC) {
+    } else if (is_sync(-direction)) {
       // only receiving from other domain
       raise::ErrorIf(
         domain.neighbor_idx_in(-direction) == domain.index(),
@@ -119,10 +137,11 @@ namespace ntt {
   auto GetSendRecvParams(const Metadomain<S, M>* const metadomain,
                          Domain<S, M>&                 domain,
                          dir::direction_t<M::Dim>      direction,
-                         bool                          synchronize)
+                         bool                          synchronize,
+                         bool                          use_prtl_bc = false)
     -> std::pair<comm_params_t, comm_params_t> {
     const auto [send_indrank,
-                recv_indrank] = GetSendRecvRanks(metadomain, domain, direction);
+                recv_indrank] = GetSendRecvRanks(metadomain, domain, direction, use_prtl_bc);
     const auto [send_ind, send_rank] = send_indrank;
     const auto [recv_ind, recv_rank] = recv_indrank;
     const auto is_sending            = (send_rank >= 0);
@@ -216,6 +235,12 @@ namespace ntt {
     raise::ErrorIf(not(comm_em or comm_em0 or comm_j or comm_aux),
                    "CommunicateFields called with no task",
                    HERE);
+    // Currents follow the particle BC (which may differ from the field BC), so
+    // they must be communicated in a call of their own.
+    raise::ErrorIf(comm_j and (comm_em or comm_em0 or comm_aux),
+                   "Communicate currents (Comm::J) separately from fields",
+                   HERE);
+    const bool use_prtl_bc = comm_j;
 
     std::string comms;
     if (tags & Comm::E) {
@@ -275,7 +300,7 @@ namespace ntt {
     // traverse in all directions and send/recv the fields
     for (auto& direction : dir::Directions<M::Dim>::all) {
       const auto [send_params,
-                  recv_params] = GetSendRecvParams(this, domain, direction, false);
+                  recv_params] = GetSendRecvParams(this, domain, direction, false, use_prtl_bc);
       const auto [send_indrank, send_slice] = send_params;
       const auto [recv_indrank, recv_slice] = recv_params;
       const auto [send_ind, send_rank]      = send_indrank;
@@ -419,6 +444,10 @@ namespace ntt {
                    "SynchronizeFields cannot sync J and Buff at the same time",
                    HERE);
     const auto synchronize = true;
+    // Currents (J) are particle-sourced, so they fold along the particle BC
+    // (periodic even where the field BC is mirror/axis).  Bckp/Buff keep the
+    // field BC.
+    const bool use_prtl_bc = comm_j;
 
     std::string comms;
     if (comm_j) {
@@ -472,7 +501,7 @@ namespace ntt {
     // traverse in all directions and sync the fields
     for (auto& direction : dir::Directions<M::Dim>::all) {
       const auto [send_params,
-                  recv_params] = GetSendRecvParams(this, domain, direction, true);
+                  recv_params] = GetSendRecvParams(this, domain, direction, true, use_prtl_bc);
       const auto [send_indrank, send_slice] = send_params;
       const auto [recv_indrank, recv_slice] = recv_params;
       const auto [send_ind, send_rank]      = send_indrank;
@@ -587,9 +616,10 @@ namespace ntt {
         // tags corresponding to the direction (both send & recv)
         const auto tag_send = mpi::PrtlSendTag<D>::dir2tag(direction);
 
-        // get indices & ranks of send/recv meshblocks
+        // get indices & ranks of send/recv meshblocks (particles follow the
+        // particle BC, which may differ from the field BC)
         const auto [send_params,
-                    recv_params] = GetSendRecvRanks(this, domain, direction);
+                    recv_params] = GetSendRecvRanks(this, domain, direction, true);
         const auto [send_ind, send_rank] = send_params;
         const auto [recv_ind, recv_rank] = recv_params;
 

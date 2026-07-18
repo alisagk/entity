@@ -809,13 +809,35 @@ namespace kernel::gr {
     }
     if constexpr (D == Dim::_2D || D == Dim::_3D) {
       if (particles.i2(p) < 0) {
-        if (bc.is_axis_i2min) {
+        if (bc.is_periodic_i2min) {
+          // wrap in theta; shift i2_prev by the same amount so the current
+          // deposition trajectory stays a single-cell step (the current
+          // deposited into the ghost layer is folded back by the periodic
+          // field communication).
+          particles.i2(p)      += ctx.ni2;
+          particles.i2_prev(p) += ctx.ni2;
+        } else if (bc.is_glide_i2min) {
+          // equatorial glide (reflection-periodic): wrap to the opposite edge
+          // like periodic, and flip the theta velocity component (the position
+          // trajectory is the plain wrap, so the deposited current folds
+          // periodically; the flip is the "symmetric reflection").
+          particles.i2(p)      += ctx.ni2;
+          particles.i2_prev(p) += ctx.ni2;
+          particles.ux2(p)      = -particles.ux2(p);
+        } else if (bc.is_axis_i2min) {
           particles.i2(p)  = 0;
           particles.dx2(p) = ONE - particles.dx2(p);
           particles.ux2(p) = -particles.ux2(p);
         }
       } else if (particles.i2(p) >= ctx.ni2) {
-        if (bc.is_axis_i2max) {
+        if (bc.is_periodic_i2max) {
+          particles.i2(p)      -= ctx.ni2;
+          particles.i2_prev(p) -= ctx.ni2;
+        } else if (bc.is_glide_i2max) {
+          particles.i2(p)      -= ctx.ni2;
+          particles.i2_prev(p) -= ctx.ni2;
+          particles.ux2(p)      = -particles.ux2(p);
+        } else if (bc.is_axis_i2max) {
           particles.i2(p)  = ctx.ni2 - 1;
           particles.dx2(p) = ONE - particles.dx2(p);
           particles.ux2(p) = -particles.ux2(p);

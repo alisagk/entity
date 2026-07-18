@@ -220,6 +220,58 @@ namespace ntt {
     }
 
     template <GRMetricClass M>
+    void GlideFieldsIn(const dir::direction_t<M::Dim>& direction,
+                       Domain<SimEngine::GRPIC, M>&    domain,
+                       BCTags                          tags,
+                       const gr_bc&                    g) {
+      /**
+       * equatorial-glide (reflection-periodic) boundary: the periodic comm has
+       * already wrapped the theta ghosts from the opposite edge; here we flip
+       * the theta-component (E_theta/D_theta, B_theta/H_theta) to complete the
+       * symmetric reflection.
+       */
+      raise::ErrorIf(M::CoordType == Coord::Cartesian,
+                     "Invalid coordinate type for glide BCs",
+                     HERE);
+      raise::ErrorIf(direction.get_dim() != in::x2,
+                     "Invalid glide direction, should be x2",
+                     HERE);
+      ncells_t g_start, g_end;
+      if (direction.get_sign() < 0) {
+        g_start = 0;
+        g_end   = domain.mesh.i_min(in::x2);
+      } else {
+        g_start = domain.mesh.i_max(in::x2);
+        g_end   = domain.mesh.n_all(in::x2);
+      }
+      const auto range = domain.mesh.n_all(in::x1);
+      if (g == gr_bc::main) {
+        Kokkos::parallel_for(
+          "GlideBCFields",
+          range,
+          kernel::bc::GlideBoundaries_kernel<M::Dim>(domain.fields.em,
+                                                     g_start,
+                                                     g_end,
+                                                     tags));
+        Kokkos::parallel_for(
+          "GlideBCFields",
+          range,
+          kernel::bc::GlideBoundaries_kernel<M::Dim>(domain.fields.em0,
+                                                     g_start,
+                                                     g_end,
+                                                     tags));
+      } else if (g == gr_bc::aux) {
+        Kokkos::parallel_for(
+          "GlideBCFields",
+          range,
+          kernel::bc::GlideBoundaries_kernel<M::Dim>(domain.fields.aux,
+                                                     g_start,
+                                                     g_end,
+                                                     tags));
+      }
+    }
+
+    template <GRMetricClass M>
     void CustomFieldsIn(const dir::direction_t<M::Dim>& direction,
                         Domain<SimEngine::GRPIC, M>&    domain,
                         BCTags                          tags,
@@ -244,6 +296,8 @@ namespace ntt {
             MatchFieldsIn<M, PG>(direction, domain, global_grid, pgen, params, tags, g);
           } else if (domain.mesh.flds_bc_in(direction) == FldsBC::AXIS) {
             AxisFieldsIn<M>(direction, domain, tags);
+          } else if (domain.mesh.flds_bc_in(direction) == FldsBC::GLIDE) {
+            GlideFieldsIn<M>(direction, domain, tags, g);
           } else if (global_grid.flds_bc_in(direction) == FldsBC::CUSTOM) {
             CustomFieldsIn<M>(direction, domain, tags, g);
           } else if (domain.mesh.flds_bc_in(direction) == FldsBC::HORIZON) {
@@ -252,7 +306,9 @@ namespace ntt {
         } // loop over directions
       } else if (g == gr_bc::aux) {
         for (auto& direction : dir::Directions<M::Dim>::orth) {
-          if (domain.mesh.flds_bc_in(direction) == FldsBC::HORIZON) {
+          if (domain.mesh.flds_bc_in(direction) == FldsBC::GLIDE) {
+            GlideFieldsIn<M>(direction, domain, tags, g);
+          } else if (domain.mesh.flds_bc_in(direction) == FldsBC::HORIZON) {
             HorizonFieldsIn<M>(direction, domain, params, tags, g);
           }
         }
