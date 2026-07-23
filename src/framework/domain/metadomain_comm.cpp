@@ -45,13 +45,9 @@ namespace ntt {
     // differ from the field BC (e.g. mirror/axis fields with periodic
     // "travel-through" particles: the field is reflected, but the current the
     // particles deposit must still be folded periodically to stay conserved).
-    // GLIDE (reflection-periodic) wraps like PERIODIC; the theta-component sign
-    // flip is applied separately (fields: GlideFieldsIn; particles: pusher).
     const auto is_periodic = [&](const dir::direction_t<M::Dim>& d) -> bool {
-      return use_prtl_bc ? (domain.mesh.prtl_bc_in(d) == PrtlBC::PERIODIC or
-                            domain.mesh.prtl_bc_in(d) == PrtlBC::GLIDE)
-                         : (domain.mesh.flds_bc_in(d) == FldsBC::PERIODIC or
-                            domain.mesh.flds_bc_in(d) == FldsBC::GLIDE);
+      return use_prtl_bc ? (domain.mesh.prtl_bc_in(d) == PrtlBC::PERIODIC)
+                         : (domain.mesh.flds_bc_in(d) == FldsBC::PERIODIC);
     };
     const auto is_sync = [&](const dir::direction_t<M::Dim>& d) -> bool {
       return use_prtl_bc ? (domain.mesh.prtl_bc_in(d) == PrtlBC::SYNC)

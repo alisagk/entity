@@ -867,47 +867,6 @@ namespace kernel::bc {
     }
   };
 
-  /**
-   * @brief Equatorial-glide (reflection-periodic) field boundary in x2.
-   * @details The periodic communication has already wrapped the theta ghost
-   *          cells from the opposite edge; this kernel applies the "symmetric
-   *          reflection" half of the glide by negating the theta-component of
-   *          the wrapped fields (indices 1 = E_theta/D_theta, 4 = B_theta/
-   *          H_theta) in the theta ghost layer [g_start, g_end).  r- and
-   *          phi-components are left unflipped.
-   */
-  template <Dimension D>
-  struct GlideBoundaries_kernel {
-    ndfield_t<D, 6> Fld;
-    const ncells_t  g_start, g_end;
-    const bool      setE { false }, setB { false };
-
-    GlideBoundaries_kernel(ndfield_t<D, 6>& Fld,
-                           ncells_t         g_start,
-                           ncells_t         g_end,
-                           BCTags           tags)
-      : Fld { Fld }
-      , g_start { g_start }
-      , g_end { g_end }
-      , setE { tags & BC::Ex1 or tags & BC::Ex2 or tags & BC::Ex3 }
-      , setB { tags & BC::Bx1 or tags & BC::Bx2 or tags & BC::Bx3 } {}
-
-    Inline void operator()(cellidx_t i1) const {
-      if constexpr (D == Dim::_2D) {
-        for (ncells_t j { g_start }; j < g_end; ++j) {
-          if (setE) {
-            Fld(i1, j, em::ex2) = -Fld(i1, j, em::ex2); // index 1: E_theta/D_theta
-          }
-          if (setB) {
-            Fld(i1, j, em::bx2) = -Fld(i1, j, em::bx2); // index 4: B_theta/H_theta
-          }
-        }
-      } else {
-        raise::KernelError(HERE, "GlideBoundaries_kernel: D != 2");
-      }
-    }
-  };
-
   template <SRMetricClass M, SRFieldSetterClass<M::Dim> FS, bool P, in O>
   struct EnforcedBoundaries_kernel {
     static_assert(static_cast<dim_t>(O) < static_cast<dim_t>(M::Dim),

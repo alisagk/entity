@@ -104,7 +104,9 @@ namespace ntt {
                        m_params.get<std::map<std::string, real_t>>(
                          "grid.metric.params"),
                        m_params.get<std::vector<ParticleSpecies>>(
-                         "particles.species") }
+                         "particles.species"),
+                       m_params.get<std::vector<real_t>>(
+                         "simulation.domain.decomposition_weight") }
       , m_pgen { m_params, m_metadomain }
       , is_resuming { m_params.get<bool>("checkpoint.is_resuming") }
       , runtime { m_params.get<simtime_t>("simulation.runtime") }

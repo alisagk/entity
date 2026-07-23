@@ -212,7 +212,6 @@ namespace kernel {
       const bool is_absorb_i1min { false }, is_absorb_i1max { false };
       const bool is_axis_i2min { false }, is_axis_i2max { false };
       const bool is_periodic_i2min { false }, is_periodic_i2max { false };
-      const bool is_glide_i2min { false }, is_glide_i2max { false };
 
       PusherBoundaries(const boundaries_t<PrtlBC>& boundaries)
         : is_absorb_i1min { (validate(boundaries),
@@ -223,9 +222,7 @@ namespace kernel {
         , is_axis_i2min { boundaries[1].first == PrtlBC::AXIS }
         , is_axis_i2max { boundaries[1].second == PrtlBC::AXIS }
         , is_periodic_i2min { boundaries[1].first == PrtlBC::PERIODIC }
-        , is_periodic_i2max { boundaries[1].second == PrtlBC::PERIODIC }
-        , is_glide_i2min { boundaries[1].first == PrtlBC::GLIDE }
-        , is_glide_i2max { boundaries[1].second == PrtlBC::GLIDE } {}
+        , is_periodic_i2max { boundaries[1].second == PrtlBC::PERIODIC } {}
 
     private:
       static void validate(const boundaries_t<PrtlBC>& b) {

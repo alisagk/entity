@@ -102,6 +102,62 @@ namespace tools {
   }
 
   /**
+   * @brief Decompose a 1D domain into ndomains contiguous blocks of roughly
+   *        equal cumulative weight (static load balancing).
+   * @param ndomains Number of domains
+   * @param weights  Per-cell weight; length == number of cells.  Block
+   *                 boundaries are chosen so that the sum of weights per block
+   *                 is as equal as possible, subject to >= 5 cells per block.
+   * @note With a uniform weight this reduces to decompose1D.  Used e.g. to put
+   *       more (narrower) blocks where the particle load is high.
+   */
+  inline auto weightedDecompose1D(unsigned int               ndomains,
+                                  const std::vector<real_t>& weights)
+    -> std::vector<ncells_t> {
+    const ncells_t ncells = (ncells_t)weights.size();
+    raise::ErrorIf(ncells < 5 * ndomains,
+                   "weightedDecompose1D: need >= 5 cells per domain",
+                   HERE);
+    // cumulative weight, cum[i] = sum of weights[0..i-1]
+    std::vector<double> cum(ncells + 1, 0.0);
+    for (ncells_t i { 0 }; i < ncells; ++i) {
+      raise::ErrorIf(weights[i] < ZERO, "weightedDecompose1D: negative weight", HERE);
+      cum[i + 1] = cum[i] + (double)weights[i];
+    }
+    const double total = cum[ncells];
+    raise::ErrorIf(total <= 0.0, "weightedDecompose1D: non-positive total weight", HERE);
+
+    std::vector<ncells_t> ncells_domain(ndomains, 0);
+    ncells_t              start = 0;
+    for (unsigned int d { 0 }; d < ndomains; ++d) {
+      if (d == ndomains - 1) {
+        ncells_domain[d] = ncells - start; // last block takes the remainder
+        break;
+      }
+      // target cumulative weight at this block's right boundary
+      const double target = total * (double)(d + 1) / (double)ndomains;
+      // >= 5 cells here, and leave >= 5 cells for each remaining block
+      const ncells_t min_end = start + 5;
+      const ncells_t max_end = ncells - 5 * (ndomains - d - 1);
+      ncells_t       end     = min_end;
+      while (end < max_end and
+             std::fabs(cum[end + 1] - target) < std::fabs(cum[end] - target)) {
+        ++end;
+      }
+      ncells_domain[d] = end - start;
+      start            = end;
+    }
+    const auto sum = std::accumulate(ncells_domain.begin(),
+                                     ncells_domain.end(),
+                                     (ncells_t)0);
+    raise::ErrorIf(sum != ncells, "weightedDecompose1D: sum != ncells", HERE);
+    for (unsigned int d { 0 }; d < ndomains; ++d) {
+      raise::ErrorIf(ncells_domain[d] < 5, "weightedDecompose1D: ncells < 5", HERE);
+    }
+    return ncells_domain;
+  }
+
+  /**
    * @brief Distribute a 2D domain into ntot domains with rough proportions s1 and s2
    * @param ntot Number of domains
    * @param s1 Proportion of the first dimension
@@ -165,15 +221,24 @@ namespace tools {
    */
   inline auto Decompose(unsigned int                 ndomains,
                         const std::vector<ncells_t>& ncells,
-                        const std::vector<int>&      decomposition)
+                        const std::vector<int>&      decomposition,
+                        const std::vector<std::vector<real_t>>& weights = {})
     -> std::vector<std::vector<ncells_t>> {
     const auto dimension = ncells.size();
     raise::ErrorIf(dimension != decomposition.size(),
                    "Decomposition error: dimension != decomposition.size",
                    HERE);
+    // split one dimension into `nd` blocks: weighted if a per-cell weight
+    // vector is supplied for that dimension, else equal cells.
+    const auto split = [&](unsigned int nd, std::size_t dim_idx) {
+      if (dim_idx < weights.size() and not weights[dim_idx].empty()) {
+        return weightedDecompose1D(nd, weights[dim_idx]);
+      }
+      return decompose1D(nd, ncells[dim_idx]);
+    };
     if (dimension == 1) {
       /* 1D ----------------------------------------------------------------- */
-      return { decompose1D(ndomains, ncells[0]) };
+      return { split(ndomains, 0) };
     } else if (dimension == 2) {
       /* 2D ----------------------------------------------------------------- */
       unsigned int n1 { 0 }, n2 { 0 };
@@ -192,7 +257,6 @@ namespace tools {
                        "Decomposition error: does not divide evenly",
                        HERE);
         n1 = ndomains / n2;
-        return { decompose1D(n1, ncells[0]), decompose1D(n2, ncells[1]) };
       } else if (decomposition[0] < 0 && decomposition[1] < 0) {
         std::tie(n1, n2) = divideInProportions2D(ndomains, ncells[0], ncells[1]);
       } else {
@@ -201,7 +265,7 @@ namespace tools {
       raise::ErrorIf(n1 * n2 != ndomains,
                      "Decomposition error: n1 * n2 != ndomains",
                      HERE);
-      return { decompose1D(n1, ncells[0]), decompose1D(n2, ncells[1]) };
+      return { split(n1, 0), split(n2, 1) };
     } else {
       /* 3D ----------------------------------------------------------------- */
       unsigned int n1 { 0 }, n2 { 0 }, n3 { 0 };
@@ -267,9 +331,7 @@ namespace tools {
       raise::ErrorIf(n1 * n2 * n3 != ndomains,
                      "Decomposition error: n1 * n2 * n3 != ndomains",
                      HERE);
-      return { decompose1D(n1, ncells[0]),
-               decompose1D(n2, ncells[1]),
-               decompose1D(n3, ncells[2]) };
+      return { split(n1, 0), split(n2, 1), split(n3, 2) };
     }
   }
 

@@ -21,6 +21,7 @@
   #include <mpi.h>
 #endif
 
+#include <cmath>
 #include <cstddef>
 #include <limits>
 #include <map>
@@ -37,9 +38,11 @@ namespace ntt {
                                const boundaries_t<FldsBC>&  global_flds_bc,
                                const boundaries_t<PrtlBC>&  global_prtl_bc,
                                const std::map<std::string, real_t>& metric_params,
-                               const std::vector<ParticleSpecies>& species_params)
+                               const std::vector<ParticleSpecies>& species_params,
+                               const std::vector<real_t>& global_decomposition_weight)
     : g_ndomains { global_ndomains }
     , g_decomposition { global_decomposition }
+    , g_decomposition_weight { global_decomposition_weight }
     , g_mesh { global_ncells, global_extent, metric_params, global_flds_bc, global_prtl_bc }
     , g_metric_params { metric_params }
     , g_species_params { species_params } {
@@ -100,7 +103,31 @@ namespace ntt {
   template <SimEngine::type S, MetricClass M>
   void Metadomain<S, M>::createEmptyDomains() {
     /* decompose and compute cell & domain offsets ------------------------ */
-    auto d_ncells = tools::Decompose(g_ndomains, g_mesh.n_active(), g_decomposition);
+    // optional per-dimension load weighting: for a dim with exponent q != 0,
+    // block boundaries equalize the sum of (physical coord)^q per block instead
+    // of the cell count -> more (narrower) blocks where the load is high.
+    std::vector<std::vector<real_t>> d_weights(D);
+    for (auto d { 0u }; d < D; ++d) {
+      const auto q = (d < g_decomposition_weight.size()) ? g_decomposition_weight[d]
+                                                         : ZERO;
+      if (cmp::AlmostZero(q)) {
+        continue; // uniform (equal-cell) in this dimension
+      }
+      const auto         nc = g_mesh.n_active()[d];
+      std::vector<real_t> w(nc, ONE);
+      for (ncells_t i { 0 }; i < nc; ++i) {
+        coord_t<D> x_Code { ZERO }, x_Phys { ZERO };
+        x_Code[d] = static_cast<real_t>(i) + HALF; // cell center (active coords)
+        g_mesh.metric.template convert<Crd::Cd, Crd::Ph>(x_Code, x_Phys);
+        w[i] = static_cast<real_t>(
+          std::pow(static_cast<double>(x_Phys[d]), static_cast<double>(q)));
+      }
+      d_weights[d] = w;
+    }
+    auto d_ncells = tools::Decompose(g_ndomains,
+                                     g_mesh.n_active(),
+                                     g_decomposition,
+                                     d_weights);
     raise::ErrorIf(d_ncells.size() != (std::size_t)D,
                    "Invalid number of dimensions received",
                    HERE);
@@ -276,14 +303,6 @@ namespace ntt {
           if (prtl_bc == PrtlBC::PERIODIC) {
             prtl_bc = PrtlBC::SYNC;
           }
-          // GLIDE (reflection-periodic) applies a theta-component sign flip that
-          // is not implemented across domain boundaries, so it requires the
-          // whole direction to live on a single domain.
-          raise::ErrorIf(
-            flds_bc == FldsBC::GLIDE or prtl_bc == PrtlBC::GLIDE,
-            "GLIDE boundary requires a single domain in that direction "
-            "(decompose the other dimension only)",
-            HERE);
         }
         current_domain.mesh.set_flds_bc(direction, flds_bc);
         current_domain.mesh.set_prtl_bc(direction, prtl_bc);

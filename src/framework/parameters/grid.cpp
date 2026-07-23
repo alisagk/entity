@@ -241,10 +241,8 @@ namespace ntt {
                            HERE);
             x2_flds = FldsBC::pick(fmt::toLower(flds_bc[1][0]).c_str());
             raise::ErrorIf(x2_flds != FldsBC::AXIS and
-                             x2_flds != FldsBC::PERIODIC and
-                             x2_flds != FldsBC::GLIDE,
-                           "GRPIC x2 field boundary must be `axis`, `periodic`, "
-                           "or `glide`",
+                             x2_flds != FldsBC::PERIODIC,
+                           "GRPIC x2 field boundary must be `axis` or `periodic`",
                            HERE);
           }
           flds_bc_enum.push_back({ x2_flds, x2_flds });
@@ -255,10 +253,8 @@ namespace ntt {
                            HERE);
             x2_prtl = PrtlBC::pick(fmt::toLower(prtl_bc[1][0]).c_str());
             raise::ErrorIf(x2_prtl != PrtlBC::AXIS and
-                             x2_prtl != PrtlBC::PERIODIC and
-                             x2_prtl != PrtlBC::GLIDE,
-                           "GRPIC x2 particle boundary must be `axis`, `periodic`, "
-                           "or `glide`",
+                             x2_prtl != PrtlBC::PERIODIC,
+                           "GRPIC x2 particle boundary must be `axis` or `periodic`",
                            HERE);
           }
           prtl_bc_enum.push_back({ x2_prtl, x2_prtl });
@@ -458,6 +454,24 @@ namespace ntt {
                      "invalid `simulation.domain.decomposition`",
                      HERE);
 
+      // optional per-dimension load-weighting exponent q (default 0 = uniform).
+      // Block boundaries in a dim with q != 0 equalize the sum of
+      // (physical coord)^q per block instead of the cell count, placing more
+      // (narrower) blocks where the particle load is high (e.g. q ~ 1.5 in r
+      // for a Bondi inflow where Nppc ~ 1/u^r grows outward).
+      domain_decomposition_weight = toml::find_or<std::vector<real_t>>(
+        toml_data,
+        "simulation",
+        "domain",
+        "decomposition_weight",
+        std::vector<real_t>(dim.value(), ZERO));
+      if (domain_decomposition_weight->size() > dim.value()) {
+        domain_decomposition_weight->erase(
+          domain_decomposition_weight->begin() + static_cast<long>(dim.value()),
+          domain_decomposition_weight->end());
+      }
+      domain_decomposition_weight->resize(dim.value(), ZERO);
+
       /* metric and coordinates -------------------------------------------- */
       metric_enum = Metric::pick(
         fmt::toLower(toml::find<std::string>(toml_data, "grid", "metric", "metric"))
@@ -616,6 +630,8 @@ namespace ntt {
     void Grid::setParams(SimulationParams* params) const {
       params->set("simulation.domain.number", number_of_domains.value());
       params->set("simulation.domain.decomposition", domain_decomposition.value());
+      params->set("simulation.domain.decomposition_weight",
+                  domain_decomposition_weight.value());
 
       params->set("grid.resolution", resolution.value());
       params->set("grid.dim", dim.value());

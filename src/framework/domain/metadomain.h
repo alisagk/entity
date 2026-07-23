@@ -114,6 +114,9 @@ namespace ntt {
      * @param global_prtl_bc boundary conditions for particles
      * @param metric_params parameters for the metric
      * @param species_params parameters for the particle species
+     * @param decomposition_weight per-dim exponent q: block boundaries are
+     *        chosen so the sum of (physical coord)^q per block is equal (0 =
+     *        uniform equal-cell decomposition, the default)
      */
     Metadomain(unsigned int,
                const std::vector<int>&,
@@ -122,7 +125,8 @@ namespace ntt {
                const boundaries_t<FldsBC>&,
                const boundaries_t<PrtlBC>&,
                const std::map<std::string, real_t>&,
-               const std::vector<ParticleSpecies>&);
+               const std::vector<ParticleSpecies>&,
+               const std::vector<real_t>& = {});
 
     Metadomain(const Metadomain&)            = delete;
     Metadomain& operator=(const Metadomain&) = delete;
@@ -272,6 +276,7 @@ namespace ntt {
     unsigned int g_ndomains;
 
     std::vector<int>                                  g_decomposition;
+    std::vector<real_t>                               g_decomposition_weight;
     std::vector<unsigned int>                         g_ndomains_per_dim;
     std::vector<std::vector<unsigned int>>            g_domain_offsets;
     std::map<std::vector<unsigned int>, unsigned int> g_domain_offset2index;

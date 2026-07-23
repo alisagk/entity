@@ -193,7 +193,6 @@ namespace ntt {
       HORIZON    = 6,
       AXIS       = 7,
       SYNC       = 8,
-      GLIDE      = 9,
     };
     using enum type;
     type val;
@@ -205,13 +204,11 @@ namespace ntt {
 
     static constexpr const char* label = "prtl_bc";
     static constexpr type variants[] = { PERIODIC, ABSORB,  ATMOSPHERE, CUSTOM,
-                                         REFLECT,  HORIZON, AXIS,       SYNC,
-                                         GLIDE };
+                                         REFLECT,  HORIZON, AXIS,       SYNC };
     static constexpr const char* lookup[] = { "periodic",   "absorb",
                                               "atmosphere", "custom",
                                               "reflect",    "horizon",
-                                              "axis",       "sync",
-                                              "glide" };
+                                              "axis",       "sync" };
     static constexpr std::size_t total = sizeof(variants) / sizeof(variants[0]);
   };
 
@@ -226,8 +223,7 @@ namespace ntt {
       HORIZON    = 6,
       AXIS       = 7,
       CONDUCTOR  = 8,
-      SYNC       = 9, // <- SYNC means synchronization with other domains
-      GLIDE      = 10
+      SYNC       = 9 // <- SYNC means synchronization with other domains
     };
     using enum type;
     type val;
@@ -240,11 +236,11 @@ namespace ntt {
     static constexpr const char* label      = "flds_bc";
     static constexpr type        variants[] = {
       PERIODIC, MATCH, FIXED,     ATMOSPHERE, CUSTOM,
-      HORIZON,  AXIS,  CONDUCTOR, SYNC,       GLIDE,
+      HORIZON,  AXIS,  CONDUCTOR, SYNC,
     };
     static constexpr const char* lookup[] = {
       "periodic", "match", "fixed",     "atmosphere", "custom",
-      "horizon",  "axis",  "conductor", "sync",       "glide"
+      "horizon",  "axis",  "conductor", "sync"
     };
     static constexpr std::size_t total = sizeof(variants) / sizeof(variants[0]);
   };

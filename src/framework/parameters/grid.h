@@ -55,8 +55,9 @@ namespace ntt {
     };
 
     struct Grid {
-      std::optional<unsigned int>     number_of_domains;
-      std::optional<std::vector<int>> domain_decomposition;
+      std::optional<unsigned int>        number_of_domains;
+      std::optional<std::vector<int>>    domain_decomposition;
+      std::optional<std::vector<real_t>> domain_decomposition_weight;
 
       std::optional<std::vector<ncells_t>> resolution;
       std::optional<Dimension>             dim;
