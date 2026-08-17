@@ -266,6 +266,21 @@ namespace kernel::gr {
     if constexpr (D == Dim::_1D) {
       raise::KernelError(HERE, "1D not applicable");
     } else if constexpr (D == Dim::_2D) {
+      // evaluate the metric-derivative quantities once at `xp`
+      const real_t alpha_xp { metric.alpha(xp) };
+      const real_t dr_alpha_xp { metric.dr_alpha(xp) };
+      const real_t dt_alpha_xp { metric.dt_alpha(xp) };
+      const real_t dr_beta1_xp { metric.dr_beta1(xp) };
+      const real_t dt_beta1_xp { metric.dt_beta1(xp) };
+      const real_t dr_h11_xp { metric.dr_h11(xp) };
+      const real_t dr_h22_xp { metric.dr_h22(xp) };
+      const real_t dr_h33_xp { metric.dr_h33(xp) };
+      const real_t dr_h13_xp { metric.dr_h13(xp) };
+      const real_t dt_h11_xp { metric.dt_h11(xp) };
+      const real_t dt_h22_xp { metric.dt_h22(xp) };
+      const real_t dt_h33_xp { metric.dt_h33(xp) };
+      const real_t dt_h13_xp { metric.dt_h13(xp) };
+
       // initialize midpoint values & updated values
       vec_t<Dim::_3D> vp_mid { ZERO };
       vec_t<Dim::_3D> vp_mid_cntrv { ZERO };
@@ -282,48 +297,26 @@ namespace kernel::gr {
         // find contravariant midpoint velocity
         metric.template transform<Idx::D, Idx::U>(xp, vp_mid, vp_mid_cntrv);
 
-        // find Gamma / alpha at midpointы
-        real_t u0 { computeGamma(T {}, vp_mid, vp_mid_cntrv) / metric.alpha(xp) };
+        // find Gamma / alpha at midpoint
+        real_t u0 { computeGamma(T {}, vp_mid, vp_mid_cntrv) / alpha_xp };
 
         // find updated velocity
-        // vp_upd[0] =
-        //   vp[0] +
-        //   dt *
-        //     (-metric.alpha(xp) * u0 * DERIVATIVE_IN_R(metric.alpha, xp) +
-        //      vp_mid[0] * DERIVATIVE_IN_R(metric.beta1, xp) -
-        //      (HALF / u0) *
-        //        (DERIVATIVE_IN_R((metric.template h<1, 1>), xp) * SQR(vp_mid[0]) +
-        //         DERIVATIVE_IN_R((metric.template h<2, 2>), xp) * SQR(vp_mid[1]) +
-        //         DERIVATIVE_IN_R((metric.template h<3, 3>), xp) * SQR(vp_mid[2]) +
-        //         TWO * DERIVATIVE_IN_R((metric.template h<1, 3>), xp) *
-        //           vp_mid[0] * vp_mid[2]));
-        // vp_upd[1] =
-        //   vp[1] +
-        //   dt *
-        //     (-metric.alpha(xp) * u0 * DERIVATIVE_IN_TH(metric.alpha, xp) +
-        //      vp_mid[0] * DERIVATIVE_IN_TH(metric.beta1, xp) -
-        //      (HALF / u0) *
-        //        (DERIVATIVE_IN_TH((metric.template h<1, 1>), xp) * SQR(vp_mid[0]) +
-        //         DERIVATIVE_IN_TH((metric.template h<2, 2>), xp) * SQR(vp_mid[1]) +
-        //         DERIVATIVE_IN_TH((metric.template h<3, 3>), xp) * SQR(vp_mid[2]) +
-        //         TWO * DERIVATIVE_IN_TH((metric.template h<1, 3>), xp) *
-        //           vp_mid[0] * vp_mid[2]));
         vp_upd[0] = vp[0] +
-                    ctx.dt * (-metric.alpha(xp) * u0 * metric.dr_alpha(xp) +
-                              vp_mid[0] * metric.dr_beta1(xp) -
+                    ctx.dt * (-alpha_xp * u0 * dr_alpha_xp +
+                              vp_mid[0] * dr_beta1_xp -
                               (HALF / u0) *
-                                (metric.dr_h11(xp) * SQR(vp_mid[0]) +
-                                 metric.dr_h22(xp) * SQR(vp_mid[1]) +
-                                 metric.dr_h33(xp) * SQR(vp_mid[2]) +
-                                 TWO * metric.dr_h13(xp) * vp_mid[0] * vp_mid[2]));
+                                (dr_h11_xp * SQR(vp_mid[0]) +
+                                 dr_h22_xp * SQR(vp_mid[1]) +
+                                 dr_h33_xp * SQR(vp_mid[2]) +
+                                 TWO * dr_h13_xp * vp_mid[0] * vp_mid[2]));
         vp_upd[1] = vp[1] +
-                    ctx.dt * (-metric.alpha(xp) * u0 * metric.dt_alpha(xp) +
-                              vp_mid[0] * metric.dt_beta1(xp) -
+                    ctx.dt * (-alpha_xp * u0 * dt_alpha_xp +
+                              vp_mid[0] * dt_beta1_xp -
                               (HALF / u0) *
-                                (metric.dt_h11(xp) * SQR(vp_mid[0]) +
-                                 metric.dt_h22(xp) * SQR(vp_mid[1]) +
-                                 metric.dt_h33(xp) * SQR(vp_mid[2]) +
-                                 TWO * metric.dt_h13(xp) * vp_mid[0] * vp_mid[2]));
+                                (dt_h11_xp * SQR(vp_mid[0]) +
+                                 dt_h22_xp * SQR(vp_mid[1]) +
+                                 dt_h33_xp * SQR(vp_mid[2]) +
+                                 TWO * dt_h13_xp * vp_mid[0] * vp_mid[2]));
       }
     } else if constexpr (D == Dim::_3D) {
       raise::KernelNotImplementedError(HERE);
